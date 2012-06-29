@@ -11,7 +11,7 @@ require "rdiscount"
 
 class Frankie
 
-   def self.read_conf dir="conf",files=["app"]
+   def self.read_conf dir=$conf_defaults[:conf_dir],files=$conf_defaults[:conf_files]
       if File::directory? dir
          then
             Hash[
@@ -19,7 +19,7 @@ class Frankie
                   if File::exist? "#{ dir }/#{ file }.yml"
                      then
                         puts "Reading conf from '#{ dir }/#{ file }.yml' ..."
-                        [ :app, Psych::load(File::read "#{ dir }/#{ file }.yml") ]
+                        [ file, Psych::load(File::read "#{ dir }/#{ file }.yml") ]
                      else raise "Conf file '#{ dir }/#{ file }.yml' not found."
                   end
                end
@@ -102,6 +102,9 @@ end
 class MetaDoc
    
    def self.build url,dir
+      unless File::exist? "#{ $conf[dir] }/#{ url }"
+         then raise "File '#{ $conf[dir] }/#{ url }' not found."
+      end
       match = File.read("#{ $conf[dir] }/#{ url }")
          .match /^(---\n(?<meta>.+)---\n)?(?<body>.+)/m
       {
@@ -172,19 +175,22 @@ class TplObject
    
 end
 
-conf_defaults = {
-   :data_dir  => "data",
-   :view_dir  => "view",
-   :write_dir => "site"
+$conf_defaults = {
+   :conf_dir   => "conf",
+   :conf_files => ["routes"],
+   # the above config is never changed for obvious reasons
+   :data_dir   => "data",
+   :view_dir   => "view",
+   :write_dir  => "site"
 }
 
-$conf = conf_defaults.update Frankie::read_conf
+$conf = $conf_defaults.update Frankie::read_conf
 $data = Frankie::read_data
 $render_stack = []
 
 puts "Cleaning '#{ $conf[:write_dir] }'..."
 Frankie::clean
-puts "Building from url call..."
-first_target = Frankie::build $conf[:app]["target_url"]
+puts "Building from index route..."
+first_target = Frankie::build $conf["routes"]["index"]
 Frankie::write(Frankie::render(first_target),"index.html",first_target[:format])
 puts "Done!"
