@@ -4,7 +4,12 @@ require "psych"
 require "haml"
 require "rdiscount"
 
-# maybe: tenter liquid (dans une autre branche).
+# maybe: tenter liquid (dans une autre branche). <-- impossible à cause de
+# l'appel à Frankie::stack dans les templates
+
+# next step: real routing? hahahaha. le refactoring passera avant, puisque
+# j'aurai besoin des différentes parties de l'url de base de façon propre,
+# ainsi que du format, etc.
 
 # puis: étendre les extensions de fichiers (type: .rdf.yaml) pour affiner la
 # reconnaissance de formats de fichiers et de write_url.
@@ -214,7 +219,6 @@ class TplBin
    attr_accessor :src_url
    
    def initialize url
-      
       @data    = url
       @src_url = MetaDoc::write_url(@data,:bin)
    end
@@ -294,8 +298,11 @@ $write_stack = {}
 puts "Building from index route..."
 first_target = Frankie::build $conf["routes"]["index"]
 $render_stack[:done] << first_target
-first_rendered = Frankie::render(first_target)
-Frankie::write_stack(first_rendered,"index.html",first_target[:format]) 
+Frankie::write_stack(
+   Frankie::render(first_target),
+   "index" + File.extname(first_target[:end_url]),
+   first_target[:format]
+)
 
 case $write_mode
    when :write then
