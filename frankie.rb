@@ -207,11 +207,12 @@ $conf_defaults = {
 
 $conf = $conf_defaults.update Frankie::read_conf
 $data = Frankie::read_data
-$render_stack = { :waiting => [], :processing => [], :done => ["site/index.html"] }
+$render_stack = { :waiting => [], :processing => [], :done => [] }
 
 puts "Cleaning '#{ $conf[:write_dir] }'..."
 Frankie::clean
 puts "Building from index route..."
 first_target = Frankie::build $conf["routes"]["index"]
+$render_stack[:done] << first_target
 Frankie::write(Frankie::render(first_target),"index.html",first_target[:format])
 puts "Done!"
