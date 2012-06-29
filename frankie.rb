@@ -28,28 +28,30 @@ class Frankie
 
    def self.read_data dir=$conf[:data_dir],selection="*.*"
       puts "Reading data from '#{ dir }' ..."
+      text = Dir.glob(File.join dir,selection).sort { |a,b| a <=> b }
+         .select { |text| MetaDoc::valid? text }.map do |file|
+         TplObject.new(MetaDoc::build(
+            file.scan(/^data\/(.*)/).join("/"),:data_dir
+         ).update(
+            :target  => {},
+            :end_url => ""
+         ))
+      end
+      bin = Dir.glob(File.join dir,selection).sort { |a,b| a <=> b }
+         .select { |bin| not MetaDoc::valid? bin }.map do |file|
+         puts "\t'#{ file }'"
+         TplBin.new file
+      end
       Hash[ Dir.glob(File.join dir,"*").map do |file|
          if File.directory? file
             then [file.split("/")[-1], (self.read_data file,selection) ]
          end
-      end + [[
-         :text,
-         Dir.glob(File.join dir,selection).sort { |a,b| a <=> b }
-            .select { |text| MetaDoc::valid? text }.map do |file|
-            TplObject.new(MetaDoc::build(
-               file.scan(/^data\/(.*)/).join("/"),:data_dir
-            ).update(
-               :target  => {},
-               :end_url => ""
-            ))
-         end ],[
-         :bin,
-         Dir.glob(File.join dir,selection).sort { |a,b| a <=> b }
-            .select { |bin| not MetaDoc::valid? bin }.map do |file|
-            puts "\t'#{ file }'"
-            TplBin.new file
-         end ],
-         [ :dir, dir ]] ]
+      end + [
+         [:text, text],
+         [:bin, bin],
+         [:by_name, Hash[ (text + bin).map {|f| [f.src_url, f] } ] ],
+         [ :dir, dir ]
+      ] ]
    end
 
    def self.build url,dir=:data_dir,target={},end_url=""
@@ -177,8 +179,11 @@ end
 
 class TplBin
    
+   attr_accessor :src_url
+   
    def initialize url
-      @url = url
+      @url     = url
+      @src_url = MetaDoc::write_url(@url,:bin)
    end
    
    def to_s
@@ -201,16 +206,17 @@ end
 
 class TplObject
    
-   attr_accessor :meta,:format
+   attr_accessor :src_url,:meta,:format
    
    def initialize target
-      @hash   = target
-      @meta   = target[:meta]
-      @format = target[:format]
+      @src_url = target[:url]
+      @hash    = target
+      @meta    = target[:meta]
+      @format  = target[:format]
    end
    
    def to_s
-      self.body
+      @hash
    end
    
    def body format=@format
