@@ -1,0 +1,32 @@
+logique de construction repensée (pour refactoring):
+
+start ->
+   conf/ ->
+      app.yml -> passé par la suite dans un hash :app => :first_target => target
+   data/ ->
+      (target indiqué par la conf) -> # start build
+         découpage en meta + body dans un hash metadoc
+         fake rendering pour récupération des liens ->
+            *optionel
+            view/
+               (vue indiquée par les meta) -> # start build
+                  découpage en meta + body + target dans un hash metadoc
+                  fake rendering pour récupération des liens ->
+                     *optionel (...)
+         dernière vue -> # start crawl links
+            data/ ->
+               (target indiquée par le link) -> # start build (...)
+   tous les links résolus ->
+      on rm les fichiers & dossiers
+      on reprend le hash et on render par le haut -> # start render
+         création d'un metadoc{@meta, @body + functions}
+         render avec locals si possible {metadoc, target, data=links} ->
+            à l'appel de target.render -> # start render
+end.
+
+amélioration:
+* possibilités de gérer tous les templates en string interpolés ?
+  (drop de haml)
+  : ça demande de l'éval ... à discuter
+  * choix d'un data parent au lieu de view pour imbrications de contenus
+    -> aucun intérêt et contre-productif si on a accès à l'objet data
