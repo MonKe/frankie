@@ -233,11 +233,15 @@ class TplObject
    end
    
    def url
-      unless Frankie::stacked?  @hash[:url]
-         then
-            Frankie::stack @hash[:url]
+      if $conf["routes"]["index"] == @hash[:url]
+         then "/"
+         else
+            unless Frankie::stacked?  @hash[:url]
+               then
+                  Frankie::stack @hash[:url]
+            end
+            MetaDoc::write_url @hash[:url],@format
       end
-      MetaDoc::write_url @hash[:url],@format
    end
    
 end
