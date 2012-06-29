@@ -1,27 +1,24 @@
 logique de construction repensée (pour refactoring):
 
 start ->
+   on rm les fichiers & dossiers
    conf/ ->
       app.yml -> passé par la suite dans un hash :app => :first_target => target
    data/ ->
       (target indiqué par la conf) -> # start build
-         découpage en meta + body dans un hash metadoc
-         fake rendering pour récupération des liens ->
+         découpage en meta + body dans un hash metadoc ->
             *optionel
             view/
                (vue indiquée par les meta) -> # start build
                   découpage en meta + body + target dans un hash metadoc
                   fake rendering pour récupération des liens ->
                      *optionel (...)
-         dernière vue -> # start crawl links
-            data/ ->
-               (target indiquée par le link) -> # start build (...)
-   tous les links résolus ->
-      on rm les fichiers & dossiers
+      dernière vue ->
       on reprend le hash et on render par le haut -> # start render
          création d'un metadoc{@meta, @body + functions}
-         render avec locals si possible {metadoc, target, data=links} ->
-            à l'appel de target.render -> # start render
+         render avec locals si possible {data, target} ->
+            à l'appel de target.view   -> # start render
+            à l'appel de target.url    -> # start build
 end.
 
 amélioration:
