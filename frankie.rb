@@ -37,19 +37,24 @@ class Frankie
       end + [[
          :list,
          Dir.glob(File.join dir,selection).sort { |a,b| a <=> b }.map do |file|
-            TplObject.new(self.build file.scan(/^data\/(.*)/).join)
+            TplObject.new(MetaDoc::build(
+               file.scan(/^data\/(.*)/).join,:data_dir
+            ).update(
+               :target  => {},
+               :end_url => ""
+            ))
          end ],
          [ :dir, dir ]] ]
    end
 
    def self.build url,dir=:data_dir,target={},end_url=""
-      puts "\t'#{ $conf[dir] }/#{ url }'"
       metadoc = MetaDoc::build(url,dir).update(
          :target  =>  target,
          :end_url => end_url
       )
       if metadoc[:meta] && metadoc[:meta]["view"]
-         then self.build metadoc[:meta]["view"],:view_dir,metadoc,(
+         then
+            self.build metadoc[:meta]["view"],:view_dir,metadoc,(
             if end_url.empty? then metadoc[:url] else end_url end
          )
          else metadoc
@@ -59,9 +64,11 @@ class Frankie
    def self.render target
       puts "Rendering '#{ target[:url] }'"
       metadoc = MetaDoc::render target
-      unless $render_stack.empty?
+      unless $render_stack[:waiting].empty?
          then
-            next_target = build($render_stack.pop)
+            unstacked = $render_stack[:waiting].pop
+            $render_stack[:processing] << unstacked
+            next_target = build(unstacked)
             if next_target[:end_url].empty?
                then next_target.update( :end_url => next_target[:url] )
             end
@@ -70,12 +77,20 @@ class Frankie
                next_target[:end_url],
                next_target[:format]
             )
+            $render_stack[:processing] = $render_stack[:processing].delete unstacked
+            $render_stack[:done] << unstacked
       end
       metadoc
    end
    
    def self.stack url
-      $render_stack << url
+      $render_stack[:waiting] << url unless $render_stack[:done].include? url
+   end
+   
+   def self.stacked? url
+      (
+         $render_stack[:waiting] + $render_stack[:processing] + $render_stack[:done]
+      ).include? url
    end
    
    def self.clean dir=$conf[:write_dir]
@@ -91,10 +106,10 @@ class Frankie
    
    def self.write file,url,format
       write_url = MetaDoc::write_url(url,format)
-      dir = "#{ $conf[:write_dir] }/#{ write_url }".split("/")[0..-2].join "/"
-      puts "Writing '#{ $conf[:write_dir] }/#{ write_url }'"
+      dir = "#{ $conf[:write_dir] }#{ write_url }".split("/")[0..-2].join "/"
+      puts "Writing '#{ $conf[:write_dir] }#{ write_url }'"
       Dir.mkdir dir unless File.directory? dir
-      File.write("#{ $conf[:write_dir] }/#{ write_url }",file)
+      File.write("#{ $conf[:write_dir] }#{ write_url }",file)
    end
 
 end
@@ -105,6 +120,7 @@ class MetaDoc
       unless File::exist? "#{ $conf[dir] }/#{ url }"
          then raise "File '#{ $conf[dir] }/#{ url }' not found."
       end
+      puts "\t'#{ $conf[dir] }/#{ url }'"
       match = File.read("#{ $conf[dir] }/#{ url }")
          .match /^(---\n(?<meta>.+)---\n)?(?<body>.+)/m
       {
@@ -124,9 +140,9 @@ class MetaDoc
    end
    
    def self.write_url url,format
-      case format
-         when :markdown,:haml then "#{ url.split(".")[0] }.html"
-         else url
+      case self.format url
+         when :markdown,:haml then "/#{ url.split(".")[0] }.html"
+         else "/#{ url }"
       end
    end
    
@@ -163,13 +179,18 @@ class TplObject
    
    def view v=""
       unless v.empty?
-         then Frankie::render(Frankie::build v,:view_dir,@hash,@hash[:url])
+         then
+            hash = @hash.update( :meta => { "view" => v } ) 
+            Frankie::render(Frankie::build v,:view_dir,hash,hash[:url])
          else Frankie::render @hash
       end
    end
    
    def url
-      Frankie::stack @hash[:url]
+      unless Frankie::stacked?  @hash[:url]
+         then
+            Frankie::stack @hash[:url]
+      end
       MetaDoc::write_url @hash[:url],@format
    end
    
@@ -186,7 +207,7 @@ $conf_defaults = {
 
 $conf = $conf_defaults.update Frankie::read_conf
 $data = Frankie::read_data
-$render_stack = []
+$render_stack = { :waiting => [], :processing => [], :done => ["site/index.html"] }
 
 puts "Cleaning '#{ $conf[:write_dir] }'..."
 Frankie::clean
