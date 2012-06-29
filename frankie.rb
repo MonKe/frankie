@@ -7,8 +7,6 @@ require "rdiscount"
 # next step: séparation dans les datas des :list en :text et :bin avec une class
 # Media qui n'a qu'url comme propriété.
 
-# aussi: checker les layouts récursifs.
-
 class Frankie
 
    def self.read_conf dir=$conf_defaults[:conf_dir],files=$conf_defaults[:conf_files]
@@ -35,14 +33,21 @@ class Frankie
             then [file.split("/")[-1], (self.read_data file,selection) ]
          end
       end + [[
-         :list,
-         Dir.glob(File.join dir,selection).sort { |a,b| a <=> b }.map do |file|
+         :text,
+         Dir.glob(File.join dir,selection).sort { |a,b| a <=> b }
+            .select { |text| MetaDoc::valid? text }.map do |file|
             TplObject.new(MetaDoc::build(
-               file.scan(/^data\/(.*)/).join,:data_dir
+               file.scan(/^data\/(.*)/).join("/"),:data_dir
             ).update(
                :target  => {},
                :end_url => ""
             ))
+         end ],[
+         :bin,
+         Dir.glob(File.join dir,selection).sort { |a,b| a <=> b }
+            .select { |bin| not MetaDoc::valid? bin }.map do |file|
+            puts "\t'#{ file }'"
+            TplBin.new file
          end ],
          [ :dir, dir ]] ]
    end
@@ -116,6 +121,10 @@ end
 
 class MetaDoc
    
+   def self.valid? url
+      (`file -bi "#{ url }"` =~ /charset=binary/) == nil
+   end
+   
    def self.build url,dir
       unless File::exist? "#{ $conf[dir] }/#{ url }"
          then raise "File '#{ $conf[dir] }/#{ url }' not found."
@@ -142,7 +151,10 @@ class MetaDoc
    def self.write_url url,format
       case self.format url
          when :markdown,:haml then "/#{ url.split(".")[0] }.html"
-         else "/#{ url }"
+         else if format == :bin 
+            then url.scan(/^data\/(.*)/).join("/")
+            else "/#{ url }"
+         end
       end
    end
    
@@ -163,6 +175,30 @@ class MetaDoc
    
 end
 
+class TplBin
+   
+   def initialize url
+      @url = url
+   end
+   
+   def to_s
+      self.url
+   end
+   
+   def url
+      unless File::exist? MetaDoc::write_url(@url,:bin)
+         then
+            File::write(
+               "#{ $conf[:write_dir] }/#{ MetaDoc::write_url(@url,:bin) }",
+               File::read(@url)
+            )
+            puts "Writing '#{ $conf[:write_dir] }/#{ MetaDoc::write_url(@url,:bin) }'"
+      end
+      "/" + MetaDoc::write_url(@url,:bin)
+   end
+   
+end
+
 class TplObject
    
    attr_accessor :meta,:format
@@ -173,6 +209,10 @@ class TplObject
       @format = target[:format]
    end
    
+   def to_s
+      self.body
+   end
+   
    def body format=@format
       MetaDoc::render @hash.update( :format => format )
    end
@@ -180,7 +220,7 @@ class TplObject
    def view v=""
       unless v.empty?
          then
-            hash = @hash.update( :meta => { "view" => v } ) 
+            hash = @hash.update @meta.update( "view" => v ) 
             Frankie::render(Frankie::build v,:view_dir,hash,hash[:url])
          else Frankie::render @hash
       end
