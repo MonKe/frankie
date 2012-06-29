@@ -4,8 +4,7 @@ require "psych"
 require "haml"
 require "rdiscount"
 
-# next step: séparation dans les datas des :list en :text et :bin avec une class
-# Media qui n'a qu'url comme propriété.
+# next step: pretend mode par défaut, écriture avec -w ou --write.
 
 class Frankie
 
@@ -79,7 +78,7 @@ class Frankie
             if next_target[:end_url].empty?
                then next_target.update( :end_url => next_target[:url] )
             end
-            self.write(
+            self.write_stack(
                self.render(next_target),
                next_target[:end_url],
                next_target[:format]
@@ -100,6 +99,34 @@ class Frankie
       ).include? url
    end
    
+   def self.write_stack file,url,format
+      unless $write_stack.key? url
+         then
+            write_url = MetaDoc::write_url(url,format) 
+            dir = if format == :bin
+               then "#{ $conf[:write_dir] }/#{ write_url }".split("/")[0..-2].join "/"
+               else "#{ $conf[:write_dir] }#{ write_url }".split("/")[0..-2].join "/"
+            end
+            unless $write_stack.key? dir or dir == $conf[:write_dir]
+               then
+                  puts "Adding '#{ dir }' to writing stack..."
+                  $write_stack[dir] = { :make => :dir }
+            end
+            if format == :bin
+               then
+                  puts "Adding '#{ $conf[:write_dir] }/#{ write_url }' to writing stack..."
+                  $write_stack["#{ $conf[:write_dir] }/#{ write_url }"] = {
+                     :make => :bin, :with => url
+                  }
+               else
+                  puts "Adding '#{ $conf[:write_dir] }#{ write_url }' to writing stack..."
+                  $write_stack["#{ $conf[:write_dir] }#{ write_url }"] = {
+                     :make => :text, :with => file
+                  }
+            end
+      end
+   end
+   
    def self.clean dir=$conf[:write_dir]
       Dir.glob(File.join dir,"*").map do |file|
          if File.directory? file
@@ -111,12 +138,14 @@ class Frankie
       end
    end
    
-   def self.write file,url,format
-      write_url = MetaDoc::write_url(url,format)
-      dir = "#{ $conf[:write_dir] }#{ write_url }".split("/")[0..-2].join "/"
-      puts "Writing '#{ $conf[:write_dir] }#{ write_url }'"
-      Dir.mkdir dir unless File.directory? dir
-      File.write("#{ $conf[:write_dir] }#{ write_url }",file)
+   def self.write
+      $write_stack.each do |url,file|
+         case file[:make]
+            when :dir  then Dir::mkdir url
+            when :text then File::write url,file[:with]
+            when :bin  then File::write url,File::read(file[:with])
+         end
+      end
    end
 
 end
@@ -153,8 +182,8 @@ class MetaDoc
    def self.write_url url,format
       case self.format url
          when :markdown,:haml then "/#{ url.split(".")[0] }.html"
-         else if format == :bin 
-            then url.scan(/^data\/(.*)/).join("/")
+         else if format == :bin
+            then url.scan(/^data\/(.*)/).join
             else "/#{ url }"
          end
       end
@@ -182,8 +211,9 @@ class TplBin
    attr_accessor :src_url
    
    def initialize url
-      @url     = url
-      @src_url = MetaDoc::write_url(@url,:bin)
+      
+      @data    = url
+      @src_url = MetaDoc::write_url(@data,:bin)
    end
    
    def to_s
@@ -191,15 +221,8 @@ class TplBin
    end
    
    def url
-      unless File::exist? MetaDoc::write_url(@url,:bin)
-         then
-            File::write(
-               "#{ $conf[:write_dir] }/#{ MetaDoc::write_url(@url,:bin) }",
-               File::read(@url)
-            )
-            puts "Writing '#{ $conf[:write_dir] }/#{ MetaDoc::write_url(@url,:bin) }'"
-      end
-      "/" + MetaDoc::write_url(@url,:bin)
+      Frankie::write_stack(File::read(@data),@data,:bin)
+      "/" + @src_url
    end
    
 end
@@ -255,14 +278,32 @@ $conf_defaults = {
    :write_dir  => "site"
 }
 
+if ARGF.argv[0] == "-w" or ARGF.argv[0] == "--write"
+   then
+      $write_mode = :write
+elsif ARGF.argv.length > 0
+   then raise "Error in command-line arguments : '#{ ARGF.argv.join(", ") }' not found."
+   else $write_mode = :pretend
+end
+
 $conf = $conf_defaults.update Frankie::read_conf
 $data = Frankie::read_data
 $render_stack = { :waiting => [], :processing => [], :done => [] }
+$write_stack = {}
 
-puts "Cleaning '#{ $conf[:write_dir] }'..."
-Frankie::clean
 puts "Building from index route..."
 first_target = Frankie::build $conf["routes"]["index"]
 $render_stack[:done] << first_target
-Frankie::write(Frankie::render(first_target),"index.html",first_target[:format])
-puts "Done!"
+first_rendered = Frankie::render(first_target)
+Frankie::write_stack(first_rendered,"index.html",first_target[:format]) 
+
+case $write_mode
+   when :write then
+      puts "Cleaning '#{ $conf[:write_dir] }'..."
+      Frankie::clean
+      puts "Writing to '#{ $conf[:write_dir] }'..."
+      Frankie::write
+      puts "Done!"
+   when :pretend then
+       puts "Done in pretend mode. '-w' or '--write' to write the changes."
+end
