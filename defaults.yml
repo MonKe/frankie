@@ -1,0 +1,7 @@
+dirs:
+  conf:  conf
+  data:  data
+  view:  view
+  write: site
+conf:
+  files: [routes]

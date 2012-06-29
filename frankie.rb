@@ -4,11 +4,14 @@ require "psych"
 require "haml"
 require "rdiscount"
 
-# next step: pretend mode par défaut, écriture avec -w ou --write.
+# maybe: tenter liquid (dans une autre branche).
+
+# puis: étendre les extensions de fichiers (type: .rdf.yaml) pour affiner la
+# reconnaissance de formats de fichiers et de write_url.
 
 class Frankie
 
-   def self.read_conf dir=$conf_defaults[:conf_dir],files=$conf_defaults[:conf_files]
+   def self.read_conf dir=$conf_defaults["dirs"]["conf"],files=$conf_defaults["conf"]["files"]
       if File::directory? dir
          then
             Hash[
@@ -25,12 +28,12 @@ class Frankie
       end
    end
 
-   def self.read_data dir=$conf[:data_dir],selection="*.*"
+   def self.read_data dir=$conf["dirs"]["data"],selection="*.*"
       puts "Reading data from '#{ dir }' ..."
       text = Dir.glob(File.join dir,selection).sort { |a,b| a <=> b }
          .select { |text| MetaDoc::valid? text }.map do |file|
          TplObject.new(MetaDoc::build(
-            file.scan(/^data\/(.*)/).join("/"),:data_dir
+            file.scan(/^data\/(.*)/).join("/"),"data"
          ).update(
             :target  => {},
             :end_url => ""
@@ -53,14 +56,14 @@ class Frankie
       ] ]
    end
 
-   def self.build url,dir=:data_dir,target={},end_url=""
+   def self.build url,dir="data",target={},end_url=""
       metadoc = MetaDoc::build(url,dir).update(
          :target  =>  target,
          :end_url => end_url
       )
       if metadoc[:meta] && metadoc[:meta]["view"]
          then
-            self.build metadoc[:meta]["view"],:view_dir,metadoc,(
+            self.build metadoc[:meta]["view"],"view",metadoc,(
             if end_url.empty? then metadoc[:url] else end_url end
          )
          else metadoc
@@ -104,30 +107,30 @@ class Frankie
          then
             write_url = MetaDoc::write_url(url,format) 
             dir = if format == :bin
-               then "#{ $conf[:write_dir] }/#{ write_url }".split("/")[0..-2].join "/"
-               else "#{ $conf[:write_dir] }#{ write_url }".split("/")[0..-2].join "/"
+               then "#{ $conf["dirs"]["write"] }/#{ write_url }".split("/")[0..-2].join "/"
+               else "#{ $conf["dirs"]["write"] }#{ write_url }".split("/")[0..-2].join "/"
             end
-            unless $write_stack.key? dir or dir == $conf[:write_dir]
+            unless $write_stack.key? dir or dir == $conf["dirs"]["write"]
                then
                   puts "Adding '#{ dir }' to writing stack..."
                   $write_stack[dir] = { :make => :dir }
             end
             if format == :bin
                then
-                  puts "Adding '#{ $conf[:write_dir] }/#{ write_url }' to writing stack..."
-                  $write_stack["#{ $conf[:write_dir] }/#{ write_url }"] = {
+                  puts "Adding '#{ $conf["dirs"]["write"] }/#{ write_url }' to writing stack..."
+                  $write_stack["#{ $conf["dirs"]["write"] }/#{ write_url }"] = {
                      :make => :bin, :with => url
                   }
                else
-                  puts "Adding '#{ $conf[:write_dir] }#{ write_url }' to writing stack..."
-                  $write_stack["#{ $conf[:write_dir] }#{ write_url }"] = {
+                  puts "Adding '#{ $conf["dirs"]["write"] }#{ write_url }' to writing stack..."
+                  $write_stack["#{ $conf["dirs"]["write"] }#{ write_url }"] = {
                      :make => :text, :with => file
                   }
             end
       end
    end
    
-   def self.clean dir=$conf[:write_dir]
+   def self.clean dir=$conf["dirs"]["write"]
       Dir.glob(File.join dir,"*").map do |file|
          if File.directory? file
             then
@@ -157,11 +160,11 @@ class MetaDoc
    end
    
    def self.build url,dir
-      unless File::exist? "#{ $conf[dir] }/#{ url }"
-         then raise "File '#{ $conf[dir] }/#{ url }' not found."
+      unless File::exist? "#{ $conf["dirs"][dir] }/#{ url }"
+         then raise "File '#{ $conf["dirs"][dir] }/#{ url }' not found."
       end
-      puts "\t'#{ $conf[dir] }/#{ url }'"
-      match = File.read("#{ $conf[dir] }/#{ url }")
+      puts "\t'#{ $conf["dirs"][dir] }/#{ url }'"
+      match = File.read("#{ $conf["dirs"][dir] }/#{ url }")
          .match /^(---\n(?<meta>.+)---\n)?(?<body>.+)/m
       {
          :meta => (Psych::load(match["meta"]) if match["meta"]),
@@ -250,7 +253,7 @@ class TplObject
       unless v.empty?
          then
             hash = @hash.update @meta.update( "view" => v ) 
-            Frankie::render(Frankie::build v,:view_dir,hash,hash[:url])
+            Frankie::render(Frankie::build v,"view",hash,hash[:url])
          else Frankie::render @hash
       end
    end
@@ -269,14 +272,11 @@ class TplObject
    
 end
 
-$conf_defaults = {
-   :conf_dir   => "conf",
-   :conf_files => ["routes"],
-   # the above config is never changed for obvious reasons
-   :data_dir   => "data",
-   :view_dir   => "view",
-   :write_dir  => "site"
-}
+$conf_defaults = Psych::load(
+   File::read(
+      File::dirname(File::absolute_path(__FILE__)).to_s + "/defaults.yml"
+   )
+)
 
 if ARGF.argv[0] == "-w" or ARGF.argv[0] == "--write"
    then
@@ -299,9 +299,10 @@ Frankie::write_stack(first_rendered,"index.html",first_target[:format])
 
 case $write_mode
    when :write then
-      puts "Cleaning '#{ $conf[:write_dir] }'..."
+      Dir::mkdir $conf["dirs"]["write"] unless File::directory? $conf["dirs"]["write"]
+      puts "Cleaning '#{ $conf["dirs"]["write"] }'..."
       Frankie::clean
-      puts "Writing to '#{ $conf[:write_dir] }'..."
+      puts "Writing to '#{ $conf["dirs"]["write"] }'..."
       Frankie::write
       puts "Done!"
    when :pretend then
