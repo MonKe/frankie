@@ -83,6 +83,7 @@ class Frankie
          then
             unstacked = $render_stack[:waiting].pop
             $render_stack[:processing] << unstacked
+            Log.info( "Building...", :build )
             next_target = build(unstacked)
             if next_target[:end_url].empty?
                then next_target.update( :end_url => next_target[:url] )
@@ -207,7 +208,7 @@ class MetaDoc
    end
    
    def self.render target
-      Log.url( target[:url], :render_stack)
+      Log.url( target[:url], :render)
       case target[:format]
          when :markdown then RDiscount.new(target[:body]).to_html
          when :haml then
@@ -292,12 +293,19 @@ $conf_defaults = Psych::load(
    )
 )
 
-if ARGF.argv[0] == "-w" or ARGF.argv[0] == "--write"
-   then
-      $write_mode = :write
-elsif ARGF.argv.length > 0
-   then raise "Error in command-line arguments : '#{ ARGF.argv.join(", ") }' not found."
-   else $write_mode = :pretend
+# quiet mode before we start logging
+$quiet_mode = true if ARGF.argv.include? "-q" or ARGF.argv.include? "--quiet"
+# rejecting everything that's not 'args_ok'
+ARGF.argv.map do |arg|
+   args_ok = [ "-w", "--write", "-q", "--quiet" ]
+   Log.error(
+      "Wrong command-line argument #{ arg }", :arg_init, __LINE__
+   ) unless args_ok.include? arg
+   case arg
+      when "-w", "--write" then
+         Log.info( "Write mode: replacing existing files.", :arg_init )
+         $write_mode = true
+   end
 end
 
 $conf = $conf_defaults.update Frankie::read_conf
@@ -305,7 +313,7 @@ $data = Frankie::read_data
 $render_stack = { :waiting => [], :processing => [], :done => [] }
 $write_stack = {}
 
-Log.info( "Building from index route...", :build )
+Log.info( "Building...", :build )
 first_target = Frankie::build $conf["routes"]["index"]
 $render_stack[:done] << first_target
 Frankie::write_stack(
@@ -314,20 +322,20 @@ Frankie::write_stack(
    first_target[:format]
 )
 
-case $write_mode
-   when :write then
+if $write_mode
+   then
       unless File::directory? $conf["dirs"]["write"]
          then
-            Log.info( "Creating '#{ $conf["dirs"]["write"] }'...", :write )
+            Log.info( "Creating #{ $conf["dirs"]["write"] } dir...", :write )
             Dir::mkdir $conf["dirs"]["write"]
          else
-            Log.info( "Cleaning '#{ $conf["dirs"]["write"] }'...", :write )
+            Log.info( "Cleaning #{ $conf["dirs"]["write"] }...", :write )
             Frankie::clean
       end
-      Log.info( "Writing to '#{ $conf["dirs"]["write"] }'...", :write )
+      Log.info( "Writing...", :write )
       Frankie::write
       Log.info( "Done!", :end )
-   when :pretend then
+   else
        Log.info(
          "Done in pretend mode. '-w' or '--write' to write the changes.",
          :end
