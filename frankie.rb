@@ -52,6 +52,16 @@ class Frankie
       Hash[ Dir.glob(File.join dir,"*").map do |file|
          if File.directory? file
             then [file.split("/")[-1], (self.read_data file,selection) ]
+            else
+               if MetaDoc.valid? file
+                  then
+                     metadoc = MetaDoc::build(
+                        file.scan(/^data\/(.*)/).join("/"),"data"
+                     ).update( :target  => {}, :end_url => "" )
+                     [ File.basename( file ), TplObject.new( metadoc ) ]
+                  else
+                     [ File.basename( file ), TplBin.new( file )]
+               end
          end
       end + [
          [:text, text],
@@ -246,7 +256,7 @@ class TplObject
    end
    
    def to_s
-      @hash
+      body
    end
    
    def body format=@format
