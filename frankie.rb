@@ -4,15 +4,7 @@ require "psych"
 require "haml"
 require "rdiscount"
 
-# maybe: tenter liquid (dans une autre branche). <-- impossible à cause de
-# l'appel à Frankie::stack dans les templates
-
-# next step: real routing? hahahaha. le refactoring passera avant, puisque
-# j'aurai besoin des différentes parties de l'url de base de façon propre,
-# ainsi que du format, etc.
-
-# puis: étendre les extensions de fichiers (type: .rdf.yaml) pour affiner la
-# reconnaissance de formats de fichiers et de write_url.
+require File.dirname(File.absolute_path(__FILE__)) + "/frankie-log.rb"
 
 class Frankie
 
@@ -23,18 +15,31 @@ class Frankie
                files.map do |file|
                   if File::exist? "#{ dir }/#{ file }.yml"
                      then
-                        puts "Reading conf from '#{ dir }/#{ file }.yml' ..."
+                        Log.info(
+                           "Reading conf from '#{ dir }/#{ file }.yml' ...",
+                           :conf_load
+                        )
                         [ file, Psych::load(File::read "#{ dir }/#{ file }.yml") ]
-                     else raise "Conf file '#{ dir }/#{ file }.yml' not found."
+                     else
+                        Log.error(
+                           "Conf file '#{ dir }/#{ file }.yml' not found.",
+                           :conf_load,
+                           __LINE__
+                        )
                   end
                end
             ]
-         else raise "Conf dir '#{ dir }' not found."
+         else
+            Log.error(
+               "Conf dir '#{ dir }' not found.",
+               :conf_load,
+               __LINE__
+            )
       end
    end
 
    def self.read_data dir=$conf["dirs"]["data"],selection="*.*"
-      puts "Reading data from '#{ dir }' ..."
+      Log.info( "Reading data from '#{ dir }' ...", :data_load )
       docs, medias = [], []
       Hash[ Dir.glob(File.join dir,"*").map do |file|
          if File.directory? file
@@ -48,7 +53,7 @@ class Frankie
                      docs << TplObject.new( metadoc )
                      [ File.basename( file ), TplObject.new( metadoc ) ]
                   else
-                     puts '\t' + file
+                     Log.url( file, :data_load )
                      medias << TplBin.new( file )
                      [ File.basename( file ), TplBin.new( file )]
                end
@@ -72,7 +77,7 @@ class Frankie
    end
 
    def self.render target
-      puts "Rendering '#{ target[:url] }'"
+      Log.info( "Rendering '#{ target[:url] }'", :rendering )
       metadoc = MetaDoc::render target
       unless $render_stack[:waiting].empty?
          then
@@ -113,17 +118,25 @@ class Frankie
             end
             unless $write_stack.key? dir or dir == $conf["dirs"]["write"]
                then
-                  puts "Adding '#{ dir }' to writing stack..."
+                  Log.info( "Adding '#{ dir }' to writing stack...", :write_stack )
                   $write_stack[dir] = { :make => :dir }
             end
             if format == :bin
                then
-                  puts "Adding '#{ $conf["dirs"]["write"] }/#{ write_url }' to writing stack..."
+                  Log.info(
+                     "Adding '#{ $conf["dirs"]["write"] }/#{ write_url }'" +
+                     "to writing stack...",
+                     :write_stack
+                  )
                   $write_stack["#{ $conf["dirs"]["write"] }/#{ write_url }"] = {
                      :make => :bin, :with => url
                   }
                else
-                  puts "Adding '#{ $conf["dirs"]["write"] }#{ write_url }' to writing stack..."
+                  Log.info(
+                     "Adding '#{ $conf["dirs"]["write"] }#{ write_url }'" +
+                     "to writing stack...",
+                     :write_stack
+                  )
                   $write_stack["#{ $conf["dirs"]["write"] }#{ write_url }"] = {
                      :make => :text, :with => file
                   }
@@ -144,6 +157,7 @@ class Frankie
    
    def self.write
       $write_stack.each do |url,file|
+         Log.url( "- > " + url, :writing)
          case file[:make]
             when :dir  then Dir::mkdir url
             when :text then File::write url,file[:with]
@@ -162,9 +176,13 @@ class MetaDoc
    
    def self.build url,dir
       unless File::exist? "#{ $conf["dirs"][dir] }/#{ url }"
-         then raise "File '#{ $conf["dirs"][dir] }/#{ url }' not found."
+         then
+            Log.error(
+               "File '#{ $conf["dirs"][dir] }/#{ url }' not found.",
+               :building, __LINE__
+            )
       end
-      puts "\t'#{ $conf["dirs"][dir] }/#{ url }'"
+      Log.url( $conf["dirs"][dir] + "/" + url, :building )
       match = File.read("#{ $conf["dirs"][dir] }/#{ url }")
          .match /^(---\n(?<meta>.+)---\n)?(?<body>.+)/m
       {
@@ -291,7 +309,7 @@ $data = Frankie::read_data
 $render_stack = { :waiting => [], :processing => [], :done => [] }
 $write_stack = {}
 
-puts "Building from index route..."
+Log.info( "Building from index route...", :building )
 first_target = Frankie::build $conf["routes"]["index"]
 $render_stack[:done] << first_target
 Frankie::write_stack(
@@ -302,12 +320,20 @@ Frankie::write_stack(
 
 case $write_mode
    when :write then
-      Dir::mkdir $conf["dirs"]["write"] unless File::directory? $conf["dirs"]["write"]
-      puts "Cleaning '#{ $conf["dirs"]["write"] }'..."
-      Frankie::clean
-      puts "Writing to '#{ $conf["dirs"]["write"] }'..."
+      unless File::directory? $conf["dirs"]["write"]
+         then
+            Log.info( "Creating '#{ $conf["dirs"]["write"] }'...", :writing )
+            Dir::mkdir $conf["dirs"]["write"]
+         else
+            Log.info( "Cleaning '#{ $conf["dirs"]["write"] }'...", :writing )
+            Frankie::clean
+      end
+      Log.info( "Writing to '#{ $conf["dirs"]["write"] }'...", :writing )
       Frankie::write
-      puts "Done!"
+      Log.info( "Done!", :end )
    when :pretend then
-       puts "Done in pretend mode. '-w' or '--write' to write the changes."
+       Log.info(
+         "Done in pretend mode. '-w' or '--write' to write the changes.",
+         :end
+      )
 end
