@@ -60,7 +60,6 @@ class Frankie
    end
 
    def self.build url,dir="data",target={},end_url=""
-      Log.url( url, :build )
       metadoc = MetaDoc::build(url,dir).update(
          :target  =>  target,
          :end_url => end_url
@@ -75,26 +74,32 @@ class Frankie
    end
 
    def self.render target
-      Log.info( "Rendering...", :render )
       metadoc = MetaDoc::render target
       unless $render_stack[:waiting].empty?
          then
             unstacked = $render_stack[:waiting].pop
             $render_stack[:processing] << unstacked
-            Log.info( "Building...", :build )
-            next_target = build(unstacked)
-            if next_target[:end_url].empty?
-               then next_target.update( :end_url => next_target[:url] )
+            if Routes.queries.include? unstacked[:url] and !unstacked[:params].nil?
+               then
+                  next_target = build(
+                     unstacked[:meta]["view"],
+                     "view",
+                     unstacked,
+                     unstacked[:url]
+                  ).update( :end_url => Routes.make_url( unstacked ))
+               else
+                  next_target = build(unstacked)
+                  if next_target[:end_url].empty?
+                     then next_target.update( :end_url => next_target[:url] )
+                  end
             end
             self.write_stack(
                self.render(next_target),
                next_target[:end_url],
                next_target[:format]
             )
-            $render_stack[:processing] = $render_stack[:processing].delete unstacked
             $render_stack[:done] << unstacked
       end
-      Log.info( "Writing to stack...", :write_stack )
       metadoc
    end
    
@@ -105,24 +110,30 @@ class Frankie
       end
    end
    
-   def self.stacked? url
-      (
-         $render_stack[:waiting] + $render_stack[:processing] + $render_stack[:done]
-      ).include? url
+   def self.stacked? target
+      stack = $render_stack[:waiting] + $render_stack[:processing] +
+         $render_stack[:done]
+      if target[:params]
+         then stack.select { |p| p[:params] == target[:params] }.length > 0
+         else stack.include? target
+      end
    end
    
    def self.write_stack file,url,format
       unless $write_stack.key? url
          then
             write_url = MetaDoc::write_url(url,format) 
-            dir = if format == :bin
-               then "#{ $conf["dirs"]["write"] }/#{ write_url }".split("/")[0..-2].join "/"
-               else "#{ $conf["dirs"]["write"] }#{ write_url }".split("/")[0..-2].join "/"
+            dirs = if format == :bin
+               then "#{ $conf["dirs"]["write"] }/#{ write_url }".split("/")[0..-2]
+               else "#{ $conf["dirs"]["write"] }#{ write_url }".split("/")[0..-2]
             end
-            unless $write_stack.key? dir or dir == $conf["dirs"]["write"]
-               then
-                  Log.url( dir, :write_stack )
-                  $write_stack[dir] = { :make => :dir }
+            (0..(dirs.length-1)).to_a.map do |i|
+               dir = dirs[0..i].join("/")
+               unless $write_stack.key? dir or dir == $conf["dirs"]["write"]
+                  then
+                     Log.url( dir, :write_stack )
+                     $write_stack[dir] = { :make => :dir }
+               end
             end
             if format == :bin
                then
@@ -206,7 +217,13 @@ class MetaDoc
    end
    
    def self.render target
-      Log.url( target[:url], :render)
+      if !target[:target].empty? and self.last_target? target[:target]
+         then
+            if Routes.queries.include? target[:target][:url]
+               then params = target[:target][:params]
+               else params = {}
+            end
+      end
       case target[:format]
          when :markdown then RDiscount.new(target[:body]).to_html
          when :haml then
@@ -214,11 +231,61 @@ class MetaDoc
                Object.new,
                {
                   :target => (TplObject.new target[:target] if target[:target]),
-                  :data   => $data
+                  :data   => $data,
+                  :params => params
                }
             )
          else target[:body]
       end
+   end
+   
+   def self.last_view?( target )
+      !target[:target].empty? and (target[:meta].nil? or !target[:meta].key? "view")
+   end
+   
+   def self.last_target( target )
+      self.last_target? ? target : last_target( target[:target] )
+   end
+   
+   def self.last_target?( target )
+      target[:target].empty?
+   end
+   
+end
+
+class Routes
+   
+   def self.queries
+      $conf["routes"]["match"].map { |m| m["query"] }
+   end
+   
+   def self.make_url( target )
+      r = self.select_result( target[:url] )
+      self.get_params( target[:url] ).map do |param|
+         if target[:params].key? param
+            then
+               r = self.insert_param( param, target[:params][param], r )
+            else
+               Log.error(
+                  "Unknown parameter #{ param } for #{ target[:url] }",
+                  :routes, __LINE__
+               )
+         end
+      end
+      r
+   end
+   
+   def self.select_result( query )
+      $conf["routes"]["match"].select { |m| m["query"] == query }[0]["result"]
+   end
+   
+   def self.get_params( query )
+      self.select_result( query ).scan( /:([a-zA-Z]+)/ ).flatten
+   end
+   
+   def self.insert_param( key, value, result )
+      r = result.split(":" + key)
+      r[0] + r[1..-1].map { |x| value.to_s + x }.join
    end
    
 end
@@ -273,12 +340,19 @@ class TplObject
    
    def url params=nil
       hash = @hash
-      if $conf["routes"]["index"] == hash[:url]
+      if Routes.queries.include? hash[:url] and !params.nil?
+      then
+         hash = @hash.dup.update( :params => params )
+         unless Frankie.stacked? hash
+            then
+               $render_stack[:waiting] << hash
+         end
+         "/" + Routes.make_url( hash )
+      elsif $conf["routes"]["index"] == hash[:url]
          then "/"
          else
-            unless Frankie::stacked?  hash[:url]
-               then
-                  Frankie::stack hash[:url]
+            unless Frankie.stacked?  hash[:url]
+               then Frankie::stack hash[:url]
             end
             MetaDoc::write_url hash[:url],hash[:format]
       end
@@ -316,6 +390,7 @@ $write_stack = {}
 Log.info( "Building...", :build )
 first_target = Frankie::build $conf["routes"]["index"]
 $render_stack[:done] << first_target
+Log.info( "Rendering...", :build )
 Frankie::write_stack(
    Frankie::render(first_target),
    "index" + File.extname(first_target[:end_url]),
