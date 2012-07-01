@@ -303,7 +303,7 @@ ARGF.argv.map do |arg|
    ) unless args_ok.include? arg
    case arg
       when "-w", "--write" then
-         Log.info( "Write mode: replacing existing files.", :arg_init )
+         Log.important( "Write mode: replacing existing files.", :arg_init )
          $write_mode = true
    end
 end
@@ -334,9 +334,9 @@ if $write_mode
       end
       Log.info( "Writing...", :write )
       Frankie::write
-      Log.info( "Done!", :end )
+      Log.important( "Done!", :end )
    else
-       Log.info(
+       Log.important(
          "Done in pretend mode. '-w' or '--write' to write the changes.",
          :end
       )

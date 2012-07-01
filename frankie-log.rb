@@ -4,6 +4,10 @@ class Log
       puts label( step ) + "\e[34m |- #{ string }\e[0m" unless $quiet_mode
    end
    
+   def self.important( string, step )
+      puts label( step ) + "\e[33m#{ string }\e[0m"
+   end
+   
    def self.info( string, step )
       puts label( step ) + string unless $quiet_mode
    end
