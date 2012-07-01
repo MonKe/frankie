@@ -9,16 +9,14 @@ require File.dirname(File.absolute_path(__FILE__)) + "/frankie-log.rb"
 class Frankie
 
    def self.read_conf dir=$conf_defaults["dirs"]["conf"],files=$conf_defaults["conf"]["files"]
+      Log.info( "Reading conf...", :conf_load )
       if File::directory? dir
          then
             Hash[
                files.map do |file|
                   if File::exist? "#{ dir }/#{ file }.yml"
                      then
-                        Log.info(
-                           "Reading conf from '#{ dir }/#{ file }.yml' ...",
-                           :conf_load
-                        )
+                        Log.url( "#{ dir }/#{ file }.yml", :conf_load )
                         [ file, Psych::load(File::read "#{ dir }/#{ file }.yml") ]
                      else
                         Log.error(
@@ -39,9 +37,11 @@ class Frankie
    end
 
    def self.read_data dir=$conf["dirs"]["data"],selection="*.*"
-      Log.info( "Reading data from '#{ dir }' ...", :data_load )
+      Log.info( "Reading data...", :data_load )
+      Log.url( dir, :data_load )
       docs, medias = [], []
       Hash[ Dir.glob(File.join dir,"*").map do |file|
+         Log.url( file, :data_load )
          if File.directory? file
             then [file.split("/")[-1], (self.read_data file,selection) ]
             else
@@ -53,7 +53,6 @@ class Frankie
                      docs << TplObject.new( metadoc )
                      [ File.basename( file ), TplObject.new( metadoc ) ]
                   else
-                     Log.url( file, :data_load )
                      medias << TplBin.new( file )
                      [ File.basename( file ), TplBin.new( file )]
                end
@@ -63,6 +62,7 @@ class Frankie
    end
 
    def self.build url,dir="data",target={},end_url=""
+      Log.url( url, :build )
       metadoc = MetaDoc::build(url,dir).update(
          :target  =>  target,
          :end_url => end_url
@@ -77,7 +77,7 @@ class Frankie
    end
 
    def self.render target
-      Log.info( "Rendering '#{ target[:url] }'", :rendering )
+      Log.info( "Rendering...", :render )
       metadoc = MetaDoc::render target
       unless $render_stack[:waiting].empty?
          then
@@ -95,11 +95,15 @@ class Frankie
             $render_stack[:processing] = $render_stack[:processing].delete unstacked
             $render_stack[:done] << unstacked
       end
+      Log.info( "Writing to stack...", :write_stack )
       metadoc
    end
    
    def self.stack url
-      $render_stack[:waiting] << url unless $render_stack[:done].include? url
+      unless $render_stack[:done].include? url
+         then
+            $render_stack[:waiting] << url
+      end
    end
    
    def self.stacked? url
@@ -118,25 +122,17 @@ class Frankie
             end
             unless $write_stack.key? dir or dir == $conf["dirs"]["write"]
                then
-                  Log.info( "Adding '#{ dir }' to writing stack...", :write_stack )
+                  Log.url( dir, :write_stack )
                   $write_stack[dir] = { :make => :dir }
             end
             if format == :bin
                then
-                  Log.info(
-                     "Adding '#{ $conf["dirs"]["write"] }/#{ write_url }'" +
-                     "to writing stack...",
-                     :write_stack
-                  )
+                  Log.url( $conf["dirs"]["write"] + "/" + write_url, :write_stack )
                   $write_stack["#{ $conf["dirs"]["write"] }/#{ write_url }"] = {
                      :make => :bin, :with => url
                   }
                else
-                  Log.info(
-                     "Adding '#{ $conf["dirs"]["write"] }#{ write_url }'" +
-                     "to writing stack...",
-                     :write_stack
-                  )
+                  Log.url( $conf["dirs"]["write"] + write_url, :write_stack )
                   $write_stack["#{ $conf["dirs"]["write"] }#{ write_url }"] = {
                      :make => :text, :with => file
                   }
@@ -157,7 +153,7 @@ class Frankie
    
    def self.write
       $write_stack.each do |url,file|
-         Log.url( "- > " + url, :writing)
+         Log.url( "- > " + url, :write)
          case file[:make]
             when :dir  then Dir::mkdir url
             when :text then File::write url,file[:with]
@@ -179,10 +175,9 @@ class MetaDoc
          then
             Log.error(
                "File '#{ $conf["dirs"][dir] }/#{ url }' not found.",
-               :building, __LINE__
+               :build, __LINE__
             )
       end
-      Log.url( $conf["dirs"][dir] + "/" + url, :building )
       match = File.read("#{ $conf["dirs"][dir] }/#{ url }")
          .match /^(---\n(?<meta>.+)---\n)?(?<body>.+)/m
       {
@@ -212,6 +207,7 @@ class MetaDoc
    end
    
    def self.render target
+      Log.url( target[:url], :render_stack)
       case target[:format]
          when :markdown then RDiscount.new(target[:body]).to_html
          when :haml then
@@ -309,7 +305,7 @@ $data = Frankie::read_data
 $render_stack = { :waiting => [], :processing => [], :done => [] }
 $write_stack = {}
 
-Log.info( "Building from index route...", :building )
+Log.info( "Building from index route...", :build )
 first_target = Frankie::build $conf["routes"]["index"]
 $render_stack[:done] << first_target
 Frankie::write_stack(
@@ -322,13 +318,13 @@ case $write_mode
    when :write then
       unless File::directory? $conf["dirs"]["write"]
          then
-            Log.info( "Creating '#{ $conf["dirs"]["write"] }'...", :writing )
+            Log.info( "Creating '#{ $conf["dirs"]["write"] }'...", :write )
             Dir::mkdir $conf["dirs"]["write"]
          else
-            Log.info( "Cleaning '#{ $conf["dirs"]["write"] }'...", :writing )
+            Log.info( "Cleaning '#{ $conf["dirs"]["write"] }'...", :write )
             Frankie::clean
       end
-      Log.info( "Writing to '#{ $conf["dirs"]["write"] }'...", :writing )
+      Log.info( "Writing to '#{ $conf["dirs"]["write"] }'...", :write )
       Frankie::write
       Log.info( "Done!", :end )
    when :pretend then
