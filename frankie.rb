@@ -37,8 +37,6 @@ class Frankie
    end
 
    def self.read_data dir=$conf["dirs"]["data"],selection="*.*"
-      Log.info( "Reading data...", :data_load )
-      Log.url( dir, :data_load )
       docs, medias = [], []
       Hash[ Dir.glob(File.join dir,"*").map do |file|
          Log.url( file, :data_load )
@@ -273,15 +271,16 @@ class TplObject
       end
    end
    
-   def url
-      if $conf["routes"]["index"] == @hash[:url]
+   def url params=nil
+      hash = @hash
+      if $conf["routes"]["index"] == hash[:url]
          then "/"
          else
-            unless Frankie::stacked?  @hash[:url]
+            unless Frankie::stacked?  hash[:url]
                then
-                  Frankie::stack @hash[:url]
+                  Frankie::stack hash[:url]
             end
-            MetaDoc::write_url @hash[:url],@format
+            MetaDoc::write_url hash[:url],hash[:format]
       end
    end
    
@@ -309,6 +308,7 @@ ARGF.argv.map do |arg|
 end
 
 $conf = $conf_defaults.update Frankie::read_conf
+Log.info( "Reading data...", :data_load )
 $data = Frankie::read_data
 $render_stack = { :waiting => [], :processing => [], :done => [] }
 $write_stack = {}
