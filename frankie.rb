@@ -35,20 +35,7 @@ class Frankie
 
    def self.read_data dir=$conf["dirs"]["data"],selection="*.*"
       puts "Reading data from '#{ dir }' ..."
-      text = Dir.glob(File.join dir,selection).sort { |a,b| a <=> b }
-         .select { |text| MetaDoc::valid? text }.map do |file|
-         TplObject.new(MetaDoc::build(
-            file.scan(/^data\/(.*)/).join("/"),"data"
-         ).update(
-            :target  => {},
-            :end_url => ""
-         ))
-      end
-      bin = Dir.glob(File.join dir,selection).sort { |a,b| a <=> b }
-         .select { |bin| not MetaDoc::valid? bin }.map do |file|
-         puts "\t'#{ file }'"
-         TplBin.new file
-      end
+      docs, medias = [], []
       Hash[ Dir.glob(File.join dir,"*").map do |file|
          if File.directory? file
             then [file.split("/")[-1], (self.read_data file,selection) ]
@@ -58,17 +45,16 @@ class Frankie
                      metadoc = MetaDoc::build(
                         file.scan(/^data\/(.*)/).join("/"),"data"
                      ).update( :target  => {}, :end_url => "" )
+                     docs << TplObject.new( metadoc )
                      [ File.basename( file ), TplObject.new( metadoc ) ]
                   else
+                     puts '\t' + file
+                     medias << TplBin.new( file )
                      [ File.basename( file ), TplBin.new( file )]
                end
          end
-      end + [
-         [:text, text],
-         [:bin, bin],
-         [:by_name, Hash[ (text + bin).map {|f| [f.src_url, f] } ] ],
-         [ :dir, dir ]
-      ] ]
+      end +
+      [[:docs, docs], [:medias, medias], [:all, docs + medias ], [ :dir, dir ]]]
    end
 
    def self.build url,dir="data",target={},end_url=""
