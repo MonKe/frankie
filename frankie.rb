@@ -90,7 +90,7 @@ class Frankie
                      unstacked[:url]
                   ).update( :end_url => Routes.make_url( unstacked ))
                else
-                  next_target = build(unstacked)
+                  next_target = build(unstacked[:url])
                   if next_target[:end_url].empty?
                      then next_target.update( :end_url => next_target[:url] )
                   end
@@ -353,8 +353,8 @@ class TplObject
       elsif $conf["routes"]["index"] == hash[:url]
          then "/"
          else
-            unless Frankie.stacked?  hash[:url]
-               then Frankie::stack hash[:url]
+            unless Frankie.stacked?  hash
+               then $render_stack[:waiting] << hash
             end
             MetaDoc::write_url hash[:url],hash[:format]
       end
