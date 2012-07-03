@@ -6,6 +6,8 @@ require "rdiscount"
 
 require File.dirname(File.absolute_path(__FILE__)) + "/frankie-log.rb"
 
+# v0.2
+
 class Frankie
 
    def self.read_conf dir=$conf_defaults["dirs"]["conf"],files=$conf_defaults["conf"]["files"]
