@@ -230,7 +230,7 @@ class MetaDoc
             Haml::Engine.new(target[:body]).render(
                Object.new,
                {
-                  :target => (TplObject.new target[:target] if target[:target]),
+                  :content => (TplObject.new target[:target] if target[:target]),
                   :data   => $data,
                   :params => params
                }
@@ -312,12 +312,12 @@ end
 
 class TplObject
    
-   attr_accessor :src_url,:meta,:format
+   attr_accessor :src_url,:info,:format
    
    def initialize target
       @src_url = target[:url]
       @hash    = target
-      @meta    = target[:meta]
+      @info    = target[:meta]
       @format  = target[:format]
    end
    
@@ -332,7 +332,7 @@ class TplObject
    def view v=""
       unless v.empty?
          then
-            hash = @hash.update @meta.update( "view" => v ) 
+            hash = @hash.update @info.update( "view" => v ) 
             Frankie::render(Frankie::build v,"view",hash,hash[:url])
          else Frankie::render @hash
       end
